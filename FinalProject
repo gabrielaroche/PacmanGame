@@ -1,0 +1,212 @@
+#include <Arduino.h>
+#include <LiquidCrystal.h>
+
+#define PLAYER_SPEED 150
+#define GHOST_SPEED 1000
+#define BOARD_WIDTH 15
+#define BOARD_HEIGHT 1
+#define BTN_RIGHT  0
+#define BTN_UP     1
+#define BTN_DOWN   2
+#define BTN_LEFT   3
+#define BTN_SELECT 4
+#define BTN_NONE   5
+
+void(* restartGame) (void) = 0; // Function to restart the program
+
+LiquidCrystal display(8, 9, 4, 5, 6, 7);
+
+// Custom characters
+byte pacmanChar[8] = {
+  B00000,
+  B00000,
+  B01110,
+  B11011,
+  B11100,
+  B01110,
+  B00000,
+  B00000
+};
+
+byte ghostChar[8] = {
+  B00000,
+  B00000,
+  B01110,
+  B10101,
+  B11111,
+  B11111,
+  B10101,
+  B00000
+};
+
+byte pelletChar[8] = {
+  B00000,
+  B00000,
+  B00000,
+  B01110,
+  B01110,
+  B00000,
+  B00000,
+  B00000
+};
+
+// Board state
+byte pellets[BOARD_WIDTH + 1][BOARD_HEIGHT + 1];
+int pacmanX = 0, pacmanY = 1;
+int ghostX = 15, ghostY = 0;
+int playerScore = 0, gameLevel = 0;
+bool allPelletsCollected = false;
+bool gameActive = true;
+long lastButtonPress = 0;
+long lastGhostMove = 0;
+
+void initializeBoard() {
+  display.clear();
+
+  for (int x = 0; x <= BOARD_WIDTH; x++) {
+    for (int y = 0; y <= BOARD_HEIGHT; y++) {
+      pellets[x][y] = true;
+      display.setCursor(x, y);
+      display.write(2); // Pellet character
+    }
+  }
+
+  display.setCursor(pacmanX, pacmanY);
+  display.write(byte(0)); // Pacman character
+
+  display.setCursor(ghostX, ghostY);
+  display.write(byte(1)); // Ghost character
+}
+
+void showWinScreen() {
+  gameLevel++;
+  display.clear();
+  display.setCursor(0, 0);
+  display.print("* You Win! *");
+  display.setCursor(0, 1);
+  display.print("Level: ");
+  display.print(gameLevel);
+  delay(2000);
+  initializeBoard();
+}
+
+void showGameOverScreen() {
+  display.clear();
+  display.setCursor(0, 0);
+  display.print("Game Over!");
+  display.setCursor(0, 1);
+  display.print("Score: ");
+  display.print(playerScore);
+  delay(2000);
+  restartGame();
+}
+
+void movePacman(int dx, int dy) {
+  int prevX = pacmanX;
+  int prevY = pacmanY;
+
+  if ((pacmanX + dx >= 0) && (pacmanX + dx <= BOARD_WIDTH)) {
+    pacmanX += dx;
+  }
+  if ((pacmanY + dy >= 0) && (pacmanY + dy <= BOARD_HEIGHT)) {
+    pacmanY += dy;
+  }
+
+  display.setCursor(pacmanX, pacmanY);
+  display.write(byte(0));
+
+  if (pacmanX != prevX || pacmanY != prevY) {
+    display.setCursor(prevX, prevY);
+    display.print(" ");
+  }
+
+  if (pellets[pacmanX][pacmanY]) {
+    pellets[pacmanX][pacmanY] = false;
+    playerScore++;
+  }
+
+  allPelletsCollected = true;
+  for (int x = 0; x <= BOARD_WIDTH; x++) {
+    for (int y = 0; y <= BOARD_HEIGHT; y++) {
+      if (pellets[x][y]) {
+        allPelletsCollected = false;
+      }
+    }
+  }
+
+  if (allPelletsCollected) {
+    showWinScreen();
+  }
+}
+
+void moveGhost() {
+  int prevX = ghostX;
+  int prevY = ghostY;
+
+  if (ghostY < pacmanY) ghostY++;
+  else if (ghostY > pacmanY) ghostY--;
+  else if (ghostX < pacmanX) ghostX++;
+  else if (ghostX > pacmanX) ghostX--;
+
+  display.setCursor(ghostX, ghostY);
+  display.write(byte(1));
+  display.setCursor(prevX, prevY);
+
+  if (pellets[prevX][prevY]) {
+    display.write(2);
+  } else {
+    display.print(" ");
+  }
+
+  if (ghostX == pacmanX && ghostY == pacmanY) {
+    showGameOverScreen();
+  }
+}
+
+int readButtonInput() {
+  int value = analogRead(A0);
+  if (value > 1000) return BTN_NONE;
+  if (value < 50) return BTN_RIGHT;
+  if (value < 180) return BTN_UP;
+  if (value < 330) return BTN_DOWN;
+  if (value < 520) return BTN_LEFT;
+  if (value < 700) return BTN_SELECT;
+  return BTN_NONE;
+}
+
+void handlePacmanMovement() {
+  if (millis() - lastButtonPress > PLAYER_SPEED) {
+    int button = readButtonInput();
+    switch (button) {
+      case BTN_LEFT: movePacman(-1, 0); break;
+      case BTN_RIGHT: movePacman(1, 0); break;
+      case BTN_UP: movePacman(0, -1); break;
+      case BTN_DOWN: movePacman(0, 1); break;
+    }
+    lastButtonPress = millis();
+  }
+}
+
+void handleGhostMovement() {
+  if (millis() - lastGhostMove > GHOST_SPEED / (gameLevel + 1) + 10) {
+    moveGhost();
+    lastGhostMove = millis();
+  }
+}
+
+void setup() {
+  display.begin(16, 2);
+  display.createChar(0, pacmanChar);
+  display.createChar(1, ghostChar);
+  display.createChar(2, pelletChar);
+
+  display.setCursor(0, 0);
+  display.print("Pacman Game!");
+  delay(3000);
+  initializeBoard();
+}
+
+void loop() {
+  handlePacmanMovement();
+  handleGhostMovement();
+}
